@@ -1,0 +1,352 @@
+---
+title: "Trabajo Práctico Muestreo Nro 2"
+author: "Felipe Gonzalez"
+date: "9 de diciembre de 2015"
+output: pdf_document
+---
+
+
+#SELECCIÓN DE LA MUESTRA
+##PRIMERA ETAPA
+Para la primera etapa se procede a seleccionar una cantidad de UPM (*m*) en cada estrato (6, 9 y 3 respectivamente).
+
+```{r, message=FALSE}
+#Carga de librerías y data original 
+library(sampling)
+library(survey)
+library(dplyr)
+library(knitr)
+set.seed(1)
+
+data = read.csv('radiosACT2.csv')
+data = data[order(data$estrato),] 
+
+```
+
+```{r}
+#Totales de UPM a seleccionar por estrato 
+M1 = nrow(subset(data,estrato == 1))
+M2 = nrow(subset(data,estrato == 2))
+M3 = nrow(subset(data,estrato == 3))
+
+#Cantidades de UPM a seleccionar  por estrato
+m1 = 6
+m2 = 9
+m3 = 3
+```
+
+```{r}
+#a) Probabilidades de inclusión de primer y segundo orden para la primer etapa
+##Primer orden
+pii1 = m1/M1
+pii2 = m2/M2
+pii3 = m3/M3
+
+#Segundo orden
+piij1 = pii1 * (m1-1) / (M1-1)
+piij2 = pii2 * (m2-1) / (M2-1)
+piij3 = pii3 * (m3-1) / (M3-1)
+```
+
+ 
+**Cuadro 1 - Probabilidades de 1er y 2do (orden $\pi^{UP}_{hi}$ y $\pi^{UP}_{hij}$) de primera etapa para las UPM**
+
+| Estrato    |$\pi^{UP}_{hi}$   |$\pi^{UP}_{hij}$  |
+|------------|------------------|------------------|
+|Estrato 1   |`r round(pii1,4)` |`r round(piij1,4)`|	           
+|Estrato 2   |`r round(pii2,4)` |`r round(piij2,4)`|
+|Estrato 3   |`r round(pii3,4)` |`r round(piij3,4)`|
+
+
+A continuación se procedera aeleccionar la muestra estratificada de 1er etapa bajo MSA según los tamaños definidos en los párrafos anteriores.
+
+```{r}
+#b) Selección de muestra estratificada de 1er etapa bajo MSA
+muestraResumen = strata(data = data, stratanames = 'estrato',
+                        size = c(m1,m2,m3), #se utilizan para la seleccion los parámetros previamente establecidos
+                        method = 'srswor',
+                        description = F)
+
+muestraResumen = getdata(data, muestraResumen)
+```
+
+**Cuadro2 - Selección de elementos de la muestra para la primera etapa**
+```{r,comment='',fig.align='center',echo=FALSE}
+muestraResumen$Prob = round(muestraResumen$Prob,4)
+muestraResumen = select(muestraResumen,radio,tviv,estrato,Prob)
+```
+
+
+##SEGUNDA ETAPA
+Se procederá a crear una tabla o archivo con la información resumen por Radio o UPM de las probabilidades de 1er orden ($\pi^{UP}_{hi}$) y de la 2da etapa ($\pi_{k/hi}$) de las viviendas de la muestra seleccionada en el paso anterior, con los siguientes tamaños de muestras de viviendas ($n_i$):  90 viviendas del estrato 1, 50 viviendas estrato 2 y 80 viviendas estrato 3. A su vez, se incorpora la ponderación final de una vivienda como resultado de aplicar el diseño muestral empleado (*w*).
+
+```{r, comment=''}
+#Todal de viviendas a seleccionar cada radio de acuerdo al estrato (n.i)
+muestraResumen$n.i = ifelse(muestraResumen$estrato==1, 90,
+                       ifelse(muestraResumen$estrato==2,50,80)
+                       )
+
+#Probabilidad de las viviendas de ser seleccionadas dentro de cada conglomerado (pikhi)
+muestraResumen$pikhi = round(muestraResumen$n.i / muestraResumen$tviv,4)
+
+#Probabilidad final de ser incluida esa vivienda en la muestra (pik)
+muestraResumen$pik = round(muestraResumen$pikhi * muestraResumen$Prob,4)
+
+#Pesos (w) - Inversa de la probabilidad final de ser incluida esa vivienda en la muestra
+muestraResumen$w = round(1/muestraResumen$pikhi,2)
+
+#
+muestraResumen$M = ifelse(muestraResumen$estrato==1, M1,
+                              ifelse(muestraResumen$estrato==2,M2,M3)
+)
+```
+
+**Cuadro 3 - Tabla resumen de probabilidades de inclusión por Radio o UPM**
+```{r,comment='',echo=FALSE}
+muestraResumen
+```
+
+```{r}
+#Se selecciona la muestra del estrato 3
+muestraResumenEst3 = muestraResumen[muestraResumen$estrato == 3,]
+```
+
+
+Por último se presentan las r las probabilidades de 1er y 2do orden finales ($\pi_k$ y $\pi_{kl}$) teniendo en cuenta las 2 etapas utilizando una vivienda del Estrato 3 como ejemplo. Las probabilidades 1er finales ($\pi_k$) ya fueron calculadas para cada vivienda y presentadas en el cuadro 3. De este modo el vector *pik* consigna estas probabilidades para cada vivienda de acuerdo al radio al cual pertenezcan. Así, una vivienda que pertenezca al radio `r muestraResumenEst3$radio[1]` tendrá una $\pi_k$ igual a `r muestraResumenEst3$pik[1]`
+
+
+
+Para las probabilidades de inclusion de segundo orden, tambien es necesario saber el conglomerado al que pertenece cada vivienda que se empareje. En primer lugar, para las probabilidades de segundo orden de la primera tapa, en la medida en que siempre se selecciona `r m3` conglomerados de `r M3`, tal como se onbserva en el **Cuadro 1** las probabilidades de segundo orden estan dadas por:
+
+$$\pi^{UP}_{hij}  = \frac{m_3}{M_3} \frac{m_3 - 1}{M_3-1}$$
+
+$$\pi^{UP}_{hij}  = \frac{`r m3`}{`r M3`} \frac{`r m3 - 1`}{`r M3-1`} = `r round(piij3,4)`$$
+
+Sin embargo, para las probabilidades de segundo orden de la segunda tapa es necesario considerar los conglomerados de las viviendas del estrato 3 que se emparejan. Por haber solo `r m3` conglomerados en el estrato 3 las combinaciones pueden ser solo las que figuran en el siguiente cuadro.
+
+```{r,comment=''}
+congComb = combn(3,2)
+congComb = t(cbind(congComb,rep(1,2),rep(2,2),rep(3,2)))
+congComb = as.data.frame(congComb)
+names(congComb) = c('i','j')
+congComb
+```
+
+El paso siguiente es determinar el total de viviendas dentro de cada radio, al momento de seleccionar la primer unidad como así también al momento de seleccionar la segunda unidad, existiendo la posibilidad de que se seleccionen 2 unidades del mismo conglomerado. Con esos datos se puede proceder a determinar las $\pi_{kl}$ de acuerdo a las fórmulas siguientes: 
+
+$$\pi_{kl} =\pi^{UP}_{hij} \frac{n_i}{N_i} \frac{n_j}{N_j} \text{ si k }\in U_i, l \in U_j$$
+$$\pi_{kl} =\pi^{UP}_{hij} \frac{n_i}{N_i} \frac{n_i - 1}{N_i - 1} \text{ si k,l }\in U_i$$
+
+Para eso es necesario determinar el total de viviendas (*N3*) de cada radio al momento de seleccionar la primer unidad y la segunda, como así también el total de viviendas a ser seleccionadas en cada momento (*n3*). Se ordena para este proceso una matrix con cada combinación posible para el primer y segundo elemento (*i* y *j*) de acuerdo a la procedencia de cada uno de los radios (el 1, 2 o 3 según el orden que tomen en la tabla resumen de las unidades primarias de muestreo)
+
+```{r,comment=''}
+congComb$N3.i = NA
+congComb$N3.j = NA
+congComb$n3.i = 80 #en la primera seleccion, siempre se seleccionan 80 viviendas en el estrato 3, sin importar el radio
+congComb$n3.j = NA
+
+for(i in 1:nrow(congComb)){
+  #para la selección del primer elemento se toma el total de viviendas del radio tal cual aparece en la muestra
+  congComb$N3.i[i]=muestraResumenEst3$tviv[congComb$i[i]]
+  #Para la selección del segundo elemento, depende si este procede del mismo radio o no
+  if(congComb$j[i]==congComb$i[i]){ #Mismo radio,  
+    congComb$N3.j[i]=congComb$N3.i[i]-1 #cambia el total (N3) del que se selecciona
+    congComb$n3.j[i]=congComb$n3.i[i]-1 #la cantidad a seleccionar (n3)
+  }else{# si no son los mismos, se toman los parametros dados 
+    congComb$N3.j[i]=muestraResumenEst3$tviv[congComb$j[i]] #para el total de viviendas en cada radio 
+    congComb$n3.j[i]=80 #y el total a seleccionar
+  }
+}
+congComb
+```
+
+Establecidos estos valores para cada escenario posible, se procede a aplicar las fórmulas vectorialmente:
+
+```{r,comment=""}
+#segundo orden primer etapa
+congComb$pSegOrd.PrimEtap = piij3
+
+#segundo orden segunda etapa
+congComb$pSegOrd.SegEtap = congComb$n3.i/congComb$N3.i * congComb$n3.j/congComb$N3.j
+
+#finales
+congComb$pSegOrd = congComb$pSegOrd.PrimEtap * congComb$pSegOrd.SegEtap
+congComb
+```
+
+De este modo se puede obtener en un cuadro las $\pi_k$ y $\pi_{kl}$ para cada vivienda en función del radio del cual procedan las mismas. 
+
+
+**Cuadro 4a - Probabilidades de inclusión de primer orden finales $\pi_k$ para el Estrato 3**
+
+|Radio                            |$\pi_k$                        |
+|---------------------------------|-------------------------------|
+|1- `r muestraResumenEst3$radio[[1]]`|`r muestraResumenEst3$pik[[1]]`|
+|2- `r muestraResumenEst3$radio[[2]]`|`r muestraResumenEst3$pik[[2]]`|
+|3- `r muestraResumenEst3$radio[[3]]`|`r muestraResumenEst3$pik[[3]]`|
+
+**Cuadro 4b - Probabilidades de inclusión de segundo orden finales $\pi_kl$ para el Estrato 3**
+
+|Radio elemento k    |Radio elemento l    |$\pi_kl$|
+|--------------------|--------------------|--------|
+|`r congComb$i[[1]]` |`r congComb$j[[1]]` |`r congComb$pSegOrd[[1]]`|
+|`r congComb$i[[2]]` |`r congComb$j[[2]]` |`r congComb$pSegOrd[[2]]`|
+|`r congComb$i[[3]]` |`r congComb$j[[3]]` |`r congComb$pSegOrd[[3]]`|
+|`r congComb$i[[4]]` |`r congComb$j[[4]]` |`r congComb$pSegOrd[[4]]`|
+|`r congComb$i[[5]]` |`r congComb$j[[5]]` |`r congComb$pSegOrd[[5]]`|
+|`r congComb$i[[6]]` |`r congComb$j[[6]]` |`r congComb$pSegOrd[[6]]`|
+
+#ESTIMACIONES
+
+Para poder realizar las estimaciones es necesario proveer a la tabla de datos suministrada en el archivo *muestraACT2.csv* (que contiene la muestra seleccionada de viviendas y personas) las probabilidades de inclusión obtenidas en la primer parte del trabajo. Estas varían de acuerdo a cada Estrato y Radio, con lo cual se debe realizar un *merge* utilizando esas variables como claves.
+
+```{r}
+#Orden de cuadro resumen
+muestraResumen = 
+  muestraResumen %>% 
+  group_by(estrato) %>% 
+  mutate(Cong = row_number()) %>%
+  select(estrato,Cong,radio,tviv,M,Prob,n.i,pikhi,pik,w) 
+
+#Carga y orden de muestra de viviendas seleccionadas
+muestra = read.csv('muestraACT2.csv')
+names(muestra)[1]='estrato'
+muestra$Sexo = factor(muestra$Sexo,levels = 1:2,labels = c('Masculino','Femenino'))
+
+#Merge por Estrato y Conglomerado
+muestra = merge(muestra,muestraResumen,all.x = T,by = c('estrato','Cong'))
+```
+
+Una vez que la tabla de datos cuente con las variables relevadas como así también los vectores con las probabilidades de inclusión de ambas etapas de nuestro diseño, entonces puede procederse con las estimaciones. Para ello es necesario conformar el objeto de diseño que utilizará el paquete **survey**, mediante la función *svydesign()*, especificando los vectores de probabilidades mencionados.
+
+```{r}
+muestraEstim = svydesign(id=~Cong,#vector de clusters
+                         strata = ~estrato,
+                         probs = ~Prob + pikhi,
+                         #weights = ~w,
+                         data=muestra, #tabla de datos
+                         nest=TRUE) #el id de los cluster no es unico, anidados para cada estrato
+```
+
+A partir de este punto es posible avanzar con las estimaciones: 
+```{r,fig.align='center'}
+#a) la proporción de individuos con cobertura en salud por sexo, un coeficiente de variación (CV) para cada estimación y el efecto de diseño,
+tablaCobSalud = svyby(~Salud,~Sexo, muestraEstim, svymean, keep.var=F,deff = TRUE)
+tablaCobSalud$CV = round(cv(svyby(~Salud,~Sexo, muestraEstim, svymean))*100,2)
+tablaCobSalud$statistic.Salud =  round(tablaCobSalud$statistic.Salud*100,2)
+tablaCobSalud$DEff.Salud =  round(tablaCobSalud$DEff.Salud,2)
+tablaCobSalud = tablaCobSalud[,-1]
+names(tablaCobSalud) = c("Cobertura","ED","CV")
+```
+
+En el cuadro se puede observar las estimaciones para el parámetro de interés, con un leve aumento de la cobertura para las mujeres, en ambos casos un coeficiente de variación apenas por debajo del 5% y un efecto de diseño que aumenta la varianza del estimador 5 veces más que si se hubiese realizado por muestreo aleatorio simple.
+
+**Cuadro 5 - Proporción de individuos con cobertura en salud por sexo, y el efecto de diseño (ED) y coeficiente de variación (CV)**
+```{r,echo=FALSE}
+kable(tablaCobSalud, format = 'latex')
+```
+
+
+
+```{r}
+#b) la proporción de mayores de 55 años con cobertura dentro, un CV para la estimación y el efecto de diseño
+
+#Se crea un vector booleano para mayores de 55 y se multiplica como numerico con el de cobertura 
+muestraEstim$variables$Salud2 = muestraEstim$variables$Salud * (muestraEstim$variables$Edad>55)
+
+tablaCobSalud2 = as.data.frame(svymean(~Salud2,muestraEstim, deff = TRUE))
+tablaCobSalud2$CV = round(cv(svymean(~Salud2,muestraEstim))*100,2)
+tablaCobSalud2 = tablaCobSalud2[,-2]
+names(tablaCobSalud2) = c("Cobertura","ED","CV")
+tablaCobSalud2$ED = round(tablaCobSalud2$ED,2)
+tablaCobSalud2$Cobertura = round(tablaCobSalud2$Cobertura*100,2)
+rownames(tablaCobSalud2) = 'Cobertura > 55'
+```
+
+El **Cuadro 6** muestra que la cobertura para esta subpoblación es del orden del `r tablaCobSalud2$Cobertura`%. El coeficiente de variación aumenta levemente en relación a la estimación previa aunque el efecto diseño permanece relativamente constante.
+
+**Cuadro 6 - Proporción de individuos mayores de 55 años con cobertura en salud por sexo, y el efecto de diseño (ED) y coeficiente de variación (CV)**
+```{r,echo=FALSE}
+kable(tablaCobSalud2, format = 'latex')
+```
+
+
+```{r}
+#c) el total de la PEA, el total de desocupados, y la tasa de desocupación (desocupados/PEA) para la localidad, los CV para cada una de las estimaciones y los efectos de diseños respectivos,
+
+muestraEstim$variables$Desocup = as.numeric(muestraEstim$variables$Ocup != 1 & muestraEstim$variables$PEA == 1 )
+pea = svytotal(~PEA,muestraEstim,deff=TRUE)
+
+PEA = data.frame(Total = round(pea[[1]]),
+                 ED = round(deff(pea)[[1]],2),
+                 CV = round(cv(pea)[[1]]*100,2))
+rownames(PEA) = 'PEA'
+
+
+
+
+desocup.tot =  svytotal(~Desocup,muestraEstim,deff=TRUE)
+
+DesocupTot =  data.frame(Total = round(desocup.tot[[1]]),
+                 ED = round(deff(desocup.tot)[[1]],2),
+                 CV = round(cv(desocup.tot)[[1]]*100,2))
+rownames(DesocupTot) = 'Desocupacion'
+
+desocup.tasa = svyratio(numerator = ~Desocup,
+         denominator = ~ PEA == 1 ,
+         design=muestraEstim,
+         se = FALSE,
+         deff = TRUE)
+
+DesocupTasa =  data.frame(Tasa = round(desocup.tasa$ratio[1]*100,1),
+                 ED = round(deff(desocup.tasa)[[1]],2),
+                 CV = round(cv(desocup.tasa)[[1]]*100,2))
+rownames(DesocupTasa) = 'Desocupacion'
+```
+
+**Cuadro 7 - Total de población económicamente activa, Efecto de diseño (ED) y coeficiente de variación (CV).**
+```{r,echo=FALSE}
+kable(PEA, format = 'latex')
+```
+
+**Cuadro 8 - Total de desocupados, Efecto de diseño (ED) y coeficiente de variación (CV).**
+```{r,echo=FALSE}
+kable(DesocupTot, format = 'latex')
+```
+
+
+**Cuadro 9 - Tasa de desocupados, Efecto de diseño (ED) y coeficiente de variación (CV).**
+```{r,echo=FALSE}
+kable(DesocupTasa, format = 'latex')
+```
+
+
+```{r}
+#d) la tasa de desocupados por sexo, los CV para cada estimación y los efectos de diseños respectivos.
+
+desocup.sexo =
+  svyby(
+    ~ Desocup ,
+    by = ~ Sexo ,
+    denominator = ~ PEA == 1 ,
+    design = muestraEstim ,
+    na.rm = TRUE ,
+    deff = TRUE,
+    svyratio
+  )
+
+DesocupSexo = as.data.frame(desocup.sexo)
+DesocupSexo = DesocupSexo[,c(2,4)]
+names(DesocupSexo) = c('Desocupacion','ED')
+DesocupSexo$CV = round(cv(desocup.sexo)*100,2)
+DesocupSexo$Desocupacion = round(DesocupSexo$Desocupacion*100,2)
+DesocupSexo$ED = round(DesocupSexo$ED,2)
+```
+
+Como se puede observar, a la hora de analizar la tasa de desempleo, se observa que la misma es superior a la media (`r DesocupTasa$Tasa` %) entre las mujeres (`r DesocupSexo$Desocupacion[2]` %) que entre los hombres (`r DesocupSexo$Desocupacion[1]` %). En ninguna de las estimaciones realizadas, el Coeficiente de Variación supera el 10%. 
+
+
+**Cuadro 10 - Tasa de desocupados por sexo, Efecto de diseño (ED) y coeficiente de variación (CV).**
+```{r,echo=FALSE}
+kable(DesocupSexo, format = 'latex')
+```
